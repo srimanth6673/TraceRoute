@@ -1,0 +1,223 @@
+import java.io.*;
+import java.util.ArrayList;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class traceroute {
+    //Create an array list for all reachable sites for each groups
+    ArrayList<String> reachableWebsite = new ArrayList<String>();
+    //this method calculates Average Hops
+    public static double AvgHop(double totalHops, double numSets) {
+        return totalHops / numSets;
+    }
+
+    //read the data from file and create contents
+    public static String getInfoFile(String fileName) {
+
+        FileInputStream input;
+        String var = "";
+        String infoFile = "";
+
+        try {
+            //using the buffer Reader to read the file
+            input = new FileInputStream(fileName);
+            DataInputStream dataStream = new DataInputStream(input);
+            BufferedReader scan = new BufferedReader(new InputStreamReader(dataStream));
+
+            //begin reading the file
+            while ((var = scan.readLine()) != null) {
+                infoFile += var + "\n";
+            }
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return infoFile;
+
+    }
+
+    public static void main(String[] args) throws IOException {
+        traceroute traceRoute = new traceroute();
+        //getting the file info and setting it to infofile
+        String infoFile = getInfoFile("log_sample.txt");
+        //splitting the infofile with traceroute
+        String[] sets = infoFile.split("traceroute");
+        //Creating the Arraylist for reachable Websites
+        ArrayList<String> reachableWebsites = new ArrayList<String>();
+        int numSets = 0;
+        //divided the file into sets for websites
+        for (String set : sets) {
+
+            if (!set.endsWith("* * *\n")) {
+                String[] lines = set.split("\n");
+                if (lines.length == 1) {
+                    continue;
+                }
+                numSets++;
+
+                reachableWebsites.add(set);
+            }
+        }
+
+        traceRoute.setReachableWebsite(reachableWebsites);
+        try {
+            //printing into a file
+            FileWriter avgWriter = new FileWriter("avg.txt");
+            avgWriter.write("Average Number of Hops: " + traceRoute.getAvgHop()+String.format("%n"));
+            avgWriter.write("Average Delay: " + traceRoute.getAvgDelay()+" ms"+String.format("%n"));
+            avgWriter.write("Average Link Delay: " + traceRoute.getAvgLinkDelay(sets)+" ms");
+            avgWriter.close();
+
+        } catch (IOException e) {
+            System.out.println("An error occurred.");
+            e.printStackTrace();
+        }
+
+        try {
+            //printing into file
+            FileWriter histWriter = new FileWriter("hist.txt");
+            int[] hist = traceRoute.getHistogram();
+            for (int i = 0; i <= hist.length-1; i++) {
+                histWriter.write((i + 1) + "  " + hist[i]+String.format("%n"));
+
+            }
+            histWriter.close();
+        }catch(IOException e){
+
+        }
+    }
+    //method to get the Average Hops
+    public double getAvgHop() {
+        int numSets = 0;
+        int hopSum = 0;
+
+        for (String set : reachableWebsite) {
+            int count = 0;
+            String[] lines = set.split("\n");
+            numSets++;
+            count = lines.length - 1;
+            hopSum += count;
+        }
+
+        return AvgHop(hopSum, numSets);
+
+    }
+    //meathod to calculating Average Delay
+    public double getAvgDelay() {
+        double sumAvgDelay = 0;
+
+        for (String sets : reachableWebsite) {
+            String[] lines = sets.split("\n");
+            String endLine = lines[lines.length - 1];
+            double sumDelay = 0;
+            double endLineAvg = 0;
+            Matcher time = Pattern.compile("(\\d+\\.+\\d+) ms").matcher(endLine);
+            int count = 0;
+
+            while (time.find()) {
+
+                String endLineTime = time.group();
+
+                String[] splitTime = endLineTime.split("ms");
+
+                for (int i = 0; i < splitTime.length; i++) {
+                    double delay = Double.parseDouble(splitTime[0]);
+
+                    sumDelay += delay;
+                    count++;
+                }   //end for
+            }//end while
+
+            endLineAvg = sumDelay / count;
+            //calculating the sum of Average Delay
+            sumAvgDelay += endLineAvg;
+        }
+
+        //calculating the average Delay and returning the AvgDelay
+        return sumAvgDelay / reachableWebsite.size();
+    }
+    //this method calculating average Link Delay
+    public double getAvgLinkDelay(String[] groups) {
+        ArrayList<ArrayList<Double>> groupAvg = new ArrayList<ArrayList<Double>>();
+        for (int groupId = 1; groupId < groups.length; groupId++) {
+            String group = groups[groupId];
+            ArrayList<Double> eachLineAvg = new ArrayList<Double>();
+            String[] lines = group.split("\n");
+
+            for (String line : lines) {
+                Matcher match = Pattern.compile("(\\d+\\.+\\d+) ms").matcher(line);
+                double sumDelay = 0;
+                int countMatches = 0;
+                while (match.find()) {
+                    String eachLine = match.group();
+
+                    String[] splitTime = eachLine.split("ms");
+                    for (int i = 0; i < splitTime.length; i++) {
+                        double delay = Double.parseDouble(splitTime[0]);
+                        sumDelay += delay;
+                        countMatches++;
+                    }
+                }
+                Double average = null;
+                if (countMatches != 0) {
+                    average = sumDelay / countMatches;
+                }
+                eachLineAvg.add(average);
+            }
+            groupAvg.add(eachLineAvg);
+        }
+
+        ArrayList<Double> finalList = new ArrayList<Double>();
+        for (int groupId = 0; groupId < groupAvg.size(); groupId++) {
+            ArrayList<Double> eachLineAvg = groupAvg.get(groupId);
+            finalList.add(eachLineAvg.get(1));
+            for (int i = 1; i < eachLineAvg.size()-1; i++) {
+                Double presentLineAvg = eachLineAvg.get(i);
+                Double nextLineAvg = eachLineAvg.get(i+1);
+                if(presentLineAvg != null && nextLineAvg != null) {
+                    finalList.add(nextLineAvg - presentLineAvg);
+                }
+            }
+        }
+
+        //Remove negative link delay for average computations.
+        int count = 0;
+        double sum = 0.0;
+        for (int i = 0; i < finalList.size(); i++) {
+            Double linkDelay = finalList.get(i);
+            if(linkDelay != null && linkDelay >= 0) {
+                count++;
+                sum += linkDelay;
+            }
+        }
+        double averageLinkDelay = sum/count;
+        return averageLinkDelay;
+    }
+    //Method to get a histogram
+    public int[] getHistogram(){
+        int[] hopHist= new int[30];
+
+        for (String group : reachableWebsite) {
+        // Create a variable that keep track the number of hops
+            int numHopHist = 0;
+            String[] lines = group.split("\n");
+
+            numHopHist = lines.length - 1;
+            if(hopHist[numHopHist-1]==0){
+                hopHist[numHopHist-1]=1;
+            }else{
+                hopHist[numHopHist-1]++;
+            }
+
+        }
+
+        return hopHist;
+    }
+
+    //method set the reachable Websites
+    public void setReachableWebsite(ArrayList<String> value) {
+        this.reachableWebsite = value;
+    }
+}
+
